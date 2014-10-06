@@ -16,6 +16,7 @@
     To do:
         1) DBLP sync
         2) automatically add location for conference papers
+        http://dblp.uni-trier.de/rec/bibtex/conf/sp/1996
 """
 
 __author__ = "Xiaokui Shu"
@@ -137,6 +138,11 @@ def process_entry(oneline_entry):
             logger.info("drop unknown attribute:\n"
                     + "    {0}".format(attrline))
             continue
+
+        # drop url field for conference and journal papers
+        if attribute == "url" and \
+                (category == "inproceedings" or category == "article"):
+                    continue
 
         # get rid of double quotations or brackets
         value = attrline[eq_index+1:].strip()
