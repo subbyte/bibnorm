@@ -79,7 +79,6 @@ def process_entry(oneline_entry):
     # Step 0: init
     final_entries = {}
     final_entry_lines = []
-    title = ""
     oneline_entry = oneline_entry.strip()
 
     # Stpe 1: check entry
