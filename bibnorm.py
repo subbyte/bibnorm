@@ -39,18 +39,20 @@ import re
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CATEGORIES = ["article", "book", "booklet", "inbook", "incollection",
+CATEGORIES = ("article", "book", "booklet", "inbook", "incollection",
 "inproceedings", "manual", "mastersthesis", "phdthesis", "misc", "proceedings",
-"techreport", "unpublished"]
+"techreport", "unpublished")
 
 # attributes in order
-ATTRIBUTES = ["author", "title", "journal", "booktitle", "institution",
+ATTRIBUTES = ("author", "title", "journal", "booktitle", "institution",
 "school", "key", "year", "month", "series", "volume", "number", "pages",
-"note", "howpublished", "url"]
+"publisher", "note", "howpublished", "url")
 
-ATTRIBUTES_DROP = ["location", "address", "organization", "publisher", "ee",
+ATTR_ONLY_IN = {"url":"note", "publisher": ("book", "inbook", "incollection")}
+
+ATTRIBUTES_DROP = ("location", "address", "organization", "ee",
 "doi", "crossref", "bibsource", "isbn", "issn", "acmid", "numpages",
-"issue_date", "keywords"]
+"issue_date", "keywords")
 
 SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 
@@ -139,10 +141,10 @@ def process_entry(oneline_entry):
                     + "    {0}".format(attrline))
             continue
 
-        # drop url field for conference and journal papers
-        if attribute == "url" and \
-                (category == "inproceedings" or category == "article"):
-                    continue
+        # drop attribute if not required
+        if attribute in ATTR_ONLY_IN:
+            if category not in ATTR_ONLY_IN[attribute]:
+                continue
 
         # get rid of double quotations or brackets
         value = attrline[eq_index+1:].strip()
@@ -154,7 +156,10 @@ def process_entry(oneline_entry):
         # merge multiple spaces into one
         value = " ".join(value.split())
 
-        if value.isupper() and attribute != "booktitle":
+        if value == "":
+            continue
+
+        if value.isupper() and len(value.split()) > 1:
             value = string.capwords(value)
             logger.warn("ALL UPPER LETTER VALUE, Turned To Capwords:\n"
                     + "    {0}".format(value))
