@@ -40,15 +40,15 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CATEGORIES = ("article", "book", "booklet", "inbook", "incollection",
-"inproceedings", "manual", "mastersthesis", "phdthesis", "misc", "proceedings",
-"techreport", "unpublished")
+"inproceedings", "manual", "mastersthesis", "phdthesis", "misc", "techreport",
+"unpublished")
 
 # attributes in order
 ATTRIBUTES = ("author", "title", "journal", "booktitle", "institution",
 "school", "key", "year", "month", "series", "volume", "number", "pages",
-"publisher", "note", "howpublished", "url")
+"publisher", "edition", "note", "howpublished", "url")
 
-ATTR_ONLY_IN = {"url":"note", "publisher": ("book", "inbook", "incollection")}
+ATTR_ONLY_IN = {"url":("note"), "publisher": ("book", "inbook", "incollection")}
 
 ATTRIBUTES_DROP = ("location", "address", "organization", "ee",
 "doi", "crossref", "bibsource", "isbn", "issn", "acmid", "numpages",
@@ -56,10 +56,9 @@ ATTRIBUTES_DROP = ("location", "address", "organization", "ee",
 
 SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 
-re_pages_correct = re.compile("\d+--\d+")
-re_pages_shortdash = re.compile("\d+-\d+")
+re_pages = re.compile("(\d+)\s*-+\s*(\d+)")
 
-def process_entry(oneline_entry):
+def process_entry(oneline_entry, if_shorten_entry):
     """
     process each entry in a line
 
@@ -94,7 +93,7 @@ def process_entry(oneline_entry):
     # Step 2: extract category
     cap_left_bracket_index = oneline_entry.find("{")
 
-    category = oneline_entry[1:cap_left_bracket_index].lower()
+    category = oneline_entry[1:cap_left_bracket_index].lower().strip()
 
     if category not in CATEGORIES:
         logger.info("drop comment:\n"
@@ -121,7 +120,7 @@ def process_entry(oneline_entry):
     if attr_merged_seg:
         logger.warning("unmatched bracket, potential program logic error")
 
-    anchor_word = attrs[0]
+    anchor_word = attrs[0].strip()
     attrs = attrs[1:]
 
     # Step 4: extract attributes in content
@@ -159,7 +158,7 @@ def process_entry(oneline_entry):
         if value == "":
             continue
 
-        if value.isupper() and len(value.split()) > 1:
+        if value.isupper() and len(value.split()) > 2:
             value = string.capwords(value)
             logger.warn("ALL UPPER LETTER VALUE, Turned To Capwords:\n"
                     + "    {0}".format(value))
@@ -187,21 +186,24 @@ def process_entry(oneline_entry):
 
     if "pages" in final_entries:
         pages_value = final_entries["pages"]
-        if not re_pages_correct.match(pages_value):
-            if re_pages_shortdash.match(pages_value):
-                final_entries["pages"] = "--".join(pages_value.split("-"))
-            else:
-                logger.warn('format error in "pages" ' + \
-                        "for entry {0}".format(anchor_word))
+        re_match = re_pages.match(pages_value)
+        if re_match:
+            final_entries["pages"] = "--".join(re_match.groups())
+        else:
+            logger.warn('format error in "pages" ' + \
+                    "for entry {0}".format(anchor_word))
 
     if "month" in final_entries:
         month_value = final_entries["month"][:3]
         if month_value in SYNTAX_CORRECTION_MONTH:
             month_value = SYNTAX_CORRECTION_MONTH[month_value]
         mon = datetime.datetime.strptime(month_value, "%b")
-        final_entries["month"] = mon.strftime("%B")
+        if if_shorten_entry:
+            final_entries["month"] = mon.strftime("%b")
+        else:
+            final_entries["month"] = mon.strftime("%B")
 
-    for attr_name in ("number", "volume"):
+    for attr_name in ("number", "volume", "edition"):
         check_int_attr(attr_name)
 
     # Step 6: write entry into the new format
@@ -215,7 +217,9 @@ def process_entry(oneline_entry):
     # Step 7: return normalized entry in a line and the title
     return "\n".join(final_entry_lines), final_entries["title"]
 
-def process_bib_file(in_descriptor, out_descriptor, if_print_titles):
+def process_bib_file(in_descriptor, out_descriptor, \
+        if_print_titles, if_shorten_entries):
+
     oneline_content = "".join(in_descriptor.readlines())
 
     final_entries = []
@@ -240,7 +244,8 @@ def process_bib_file(in_descriptor, out_descriptor, if_print_titles):
             half_bracket -= 1
             if half_bracket == 0:
                 final_entry, title = process_entry(
-                        oneline_content[index_of_entry_start: index+1])
+                        oneline_content[index_of_entry_start: index+1],
+                        if_shorten_entries)
                 final_entries.append(final_entry)
                 titles.append(title)
             
@@ -266,9 +271,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="BibTeX Normalization Tool")
     parser.add_argument("bibfile", help="bibfile to read", metavar="FILE")
-    parser.add_argument("-t", "--titles", help="print all titles", action="store_true")
-    parser.add_argument("-i", "--inplace", help="edit the bib file in-place", action="store_true")
-    parser.add_argument("-o", "--output", help="output to file", metavar="NEWFILE")
+    parser.add_argument("-t", "--titles",
+            help="print all titles", action="store_true")
+    parser.add_argument("-s", "--short",
+            help="print months in three letters", action="store_true")
+    parser.add_argument("-i", "--inplace",
+            help="edit the bib file in-place", action="store_true")
+    parser.add_argument("-o", "--output",
+            help="output to file", metavar="NEWFILE")
     args = parser.parse_args()
 
     if args.inplace:
@@ -284,7 +294,7 @@ if __name__ == "__main__":
         else:
             out_file = sys.stdout
 
-    process_bib_file(in_file, out_file, args.titles)
+    process_bib_file(in_file, out_file, args.titles, args.short)
 
     in_file.close()
     if out_file != sys.stdout:
