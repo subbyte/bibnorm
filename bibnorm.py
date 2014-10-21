@@ -56,7 +56,8 @@ ATTRIBUTES_DROP = ("location", "address", "organization", "ee",
 
 SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 
-re_pages = re.compile("(\d+)\s*-+\s*(\d+)")
+re_pages_one = re.compile("^\d+$")
+re_pages_two = re.compile("^(\d+)\s*-+\s*(\d+)$")
 
 def process_entry(oneline_entry, if_shorten_entry):
     """
@@ -155,6 +156,7 @@ def process_entry(oneline_entry, if_shorten_entry):
         # merge multiple spaces into one
         value = " ".join(value.split())
 
+        # drop empty attributes
         if value == "":
             continue
 
@@ -186,12 +188,13 @@ def process_entry(oneline_entry, if_shorten_entry):
 
     if "pages" in final_entries:
         pages_value = final_entries["pages"]
-        re_match = re_pages.match(pages_value)
-        if re_match:
-            final_entries["pages"] = "--".join(re_match.groups())
-        else:
-            logger.warn('format error in "pages" ' + \
-                    "for entry {0}".format(anchor_word))
+        if not re_pages_one.match(pages_value):
+            re_match = re_pages_two.match(pages_value)
+            if re_match:
+                final_entries["pages"] = "--".join(re_match.groups())
+            else:
+                logger.warn('format error in "pages" ' + \
+                        "for entry {0}".format(anchor_word))
 
     if "month" in final_entries:
         month_value = final_entries["month"][:3]
