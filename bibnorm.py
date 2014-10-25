@@ -39,6 +39,8 @@ import re
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+NOTCITED_FILE = "notcited.bib"
+
 CATEGORIES = ("article", "book", "booklet", "inbook", "incollection",
 "inproceedings", "manual", "mastersthesis", "phdthesis", "misc", "techreport",
 "unpublished")
@@ -59,6 +61,8 @@ SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 re_pages_one = re.compile("^\d+$")
 re_pages_two = re.compile("^(\d+)\s*-+\s*(\d+)$")
 
+re_aux_citation = re.compile("\\citation\{([^\}]+)\}")
+
 def process_entry(oneline_entry, if_shorten_entry):
     """
     process each entry in a line
@@ -72,15 +76,15 @@ def process_entry(oneline_entry, if_shorten_entry):
 
         @param attr_name: atribute name in string
         """
-        if attr_name in final_entries:
+        if attr_name in final_attrs:
             try:
-                int(final_entries[attr_name])
+                int(final_attrs[attr_name])
             except:
                 logger.warn('format error in "{0}" for entry {1}'.format(
                     attr_name, anchor_word))
 
     # Step 0: init
-    final_entries = {}
+    final_attrs = {}
     final_entry_lines = []
     oneline_entry = oneline_entry.strip()
 
@@ -165,46 +169,46 @@ def process_entry(oneline_entry, if_shorten_entry):
             logger.warn("ALL UPPER LETTER VALUE, Turned To Capwords:\n"
                     + "    {0}".format(value))
 
-        final_entries[attribute] = value
+        final_attrs[attribute] = value
 
     # Step 5: correct attributes
-    if "title" not in final_entries:
-        if category == "misc" and "note" in final_entries:
-            final_entries["title"] = final_entries.pop("note")
+    if "title" not in final_attrs:
+        if category == "misc" and "note" in final_attrs:
+            final_attrs["title"] = final_attrs.pop("note")
         else:
             logger.warning("entry has no title:\n"
                     + "    {0}".format(oneline_entry))
 
-    if "url" in final_entries or "howpublished" in final_entries:
-        if "note" in final_entries:
+    if "url" in final_attrs or "howpublished" in final_attrs:
+        if "note" in final_attrs:
             logger.warning('entry has "note", replace it with url')
         try:
-            value_to_move = final_entries.pop("url")
+            value_to_move = final_attrs.pop("url")
         except:
-            value_to_move = final_entries.pop("howpublished")
+            value_to_move = final_attrs.pop("howpublished")
         finally:
-            final_entries["note"] = "\\url{{{0}}}, accessed {1}".format(
+            final_attrs["note"] = "\\url{{{0}}}, accessed {1}".format(
                     value_to_move, time.strftime("%B %Y"))
 
-    if "pages" in final_entries:
-        pages_value = final_entries["pages"]
+    if "pages" in final_attrs:
+        pages_value = final_attrs["pages"]
         if not re_pages_one.match(pages_value):
             re_match = re_pages_two.match(pages_value)
             if re_match:
-                final_entries["pages"] = "--".join(re_match.groups())
+                final_attrs["pages"] = "--".join(re_match.groups())
             else:
                 logger.warn('format error in "pages" ' + \
                         "for entry {0}".format(anchor_word))
 
-    if "month" in final_entries:
-        month_value = final_entries["month"][:3]
+    if "month" in final_attrs:
+        month_value = final_attrs["month"][:3]
         if month_value in SYNTAX_CORRECTION_MONTH:
             month_value = SYNTAX_CORRECTION_MONTH[month_value]
         mon = datetime.datetime.strptime(month_value, "%b")
         if if_shorten_entry:
-            final_entries["month"] = mon.strftime("%b")
+            final_attrs["month"] = mon.strftime("%b")
         else:
-            final_entries["month"] = mon.strftime("%B")
+            final_attrs["month"] = mon.strftime("%B")
 
     for attr_name in ("number", "volume", "edition"):
         check_int_attr(attr_name)
@@ -212,21 +216,31 @@ def process_entry(oneline_entry, if_shorten_entry):
     # Step 6: write entry into the new format
     final_entry_lines.append("@{0}{{{1},".format(category, anchor_word))
     for attribute in ATTRIBUTES:
-        if attribute in final_entries:
+        if attribute in final_attrs:
             final_entry_lines.append("    {0:10} = {{{1}}},".format(
-                attribute, final_entries[attribute]))
+                attribute, final_attrs[attribute]))
     final_entry_lines.append("}")
 
     # Step 7: return normalized entry in a line and the title
-    return "\n".join(final_entry_lines), final_entries["title"]
+    return "\n".join(final_entry_lines), anchor_word, final_attrs["title"]
 
-def process_bib_file(in_descriptor, out_descriptor, \
-        if_print_titles, if_shorten_entries):
+def process_bib_files(in_descriptors, out_descriptor, \
+        if_print_titles, if_shorten_entries, if_dedup, cited):
+    """
+    @param in_descriptors: file descriptors for all input files
+    @param cited: list of anchors cited, empty means not care
+    """
 
-    oneline_content = "".join(in_descriptor.readlines())
+    oneline_content = "".join("".join(f.readlines()) for f in in_descriptors)
 
+    # cited entries
     final_entries = []
-    titles = []
+
+    # not cited
+    abandoned_entries = []
+
+    # print titles and entry deduplication
+    title2anchor = {}
 
     # how many half brackets
     half_bracket = 0
@@ -246,23 +260,46 @@ def process_bib_file(in_descriptor, out_descriptor, \
         elif char == "}":
             half_bracket -= 1
             if half_bracket == 0:
-                final_entry, title = process_entry(
+                final_entry, anchor, title = process_entry(
                         oneline_content[index_of_entry_start: index+1],
                         if_shorten_entries)
-                final_entries.append(final_entry)
-                titles.append(title)
+                if not cited or anchor in cited:
+                    final_entries.append(final_entry)
+                else:
+                    abandoned_entries.append(final_entry)
+                title2anchor[title] = anchor
             
         index += 1
 
+    if if_dedup:
+        dedup(title2anchor)
+
     out_descriptor.write("\n\n".join(final_entries))
+
+    with open(NOTCITED_FILE, "w") as ncf:
+        ncf.write("\n\n".join(abandoned_entries))
 
     if if_print_titles:
         print("\n#### Print All Titles ####")
-        for title in titles:
+        for title in title2anchor.keys():
             print("{0}".format(title))
 
     print()
-    logger.info("{0} entries processed.".format(len(final_entries)))
+    logger.info("{0} entries processed: {1} cited, {2} not cited ({3}).".format(
+        len(final_entries) + len(abandoned_entries),
+        len(final_entries), len(abandoned_entries), NOTCITED_FILE))
+
+def dedup(title2anchor):
+    pass
+
+def analyze_aux(auxfile):
+    anchors = []
+    with open(auxfile, "r") as f:
+        for line in f.readlines():
+            re_match = re_aux_citation.search(line.strip())
+            if re_match:
+                anchors.append(re_match.groups()[0])
+    return anchors
 
 class ErrorParsedEntry(Exception):
     pass
@@ -270,35 +307,63 @@ class ErrorParsedEntry(Exception):
 class ErrorBracketNotMatch(Exception):
     pass
 
+class InvalidOutputFile(Exception):
+    pass
+
+class ErrorMultipleFilesInplace(Exception):
+    pass
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="BibTeX Normalization Tool")
-    parser.add_argument("bibfile", help="bibfile to read", metavar="FILE")
+    parser.add_argument("bibfile", nargs="+",
+            help="bibfiles to read", metavar="FILE")
     parser.add_argument("-t", "--titles",
             help="print all titles", action="store_true")
     parser.add_argument("-s", "--short",
             help="print months in three letters", action="store_true")
+    parser.add_argument("-d", "--deduplicate",
+            help="warn duplicate entries via edit distances between titles",
+            action="store_true")
     parser.add_argument("-i", "--inplace",
-            help="edit the bib file in-place", action="store_true")
+            help="edit the file in-place, invalid for multiple files",
+            action="store_true")
+    parser.add_argument("-c", "--cited",
+            help="analyze aux file and output cited/non-cited in two files",
+            metavar="AUX FILE")
     parser.add_argument("-o", "--output",
-            help="output to file", metavar="NEWFILE")
+            help="output to file, default to stdout", metavar="NEWFILE")
     args = parser.parse_args()
 
     if args.inplace:
-        old_file_name = args.bibfile + ".bak"
-        os.rename(args.bibfile, old_file_name)
-        in_file = open(old_file_name, "r")
-        out_file = open(args.bibfile, "w")
+        if len(args.bibfile) == 1:
+            ori_bib_file = args.bibfile[0]
+            old_file_name = ori_bib_file + ".bak"
+            os.rename(ori_bib_file, old_file_name)
+            in_files = [open(old_file_name, "r")]
+            out_file = open(ori_bib_file, "w")
+        else:
+            raise ErrorMultipleFilesInplace()
     else:
-        in_file = open(args.bibfile, "r")
+        in_files = [open(f, "r") for f in args.bibfile]
 
         if args.output:
+            if args.output in args.bibfile:
+                raise InvalidOutputFile()
             out_file = open(args.output, "w")
         else:
             out_file = sys.stdout
 
-    process_bib_file(in_file, out_file, args.titles, args.short)
+    if args.cited:
+        cited_anchors = analyze_aux(args.cited)
+    else:
+        cited_anchors = []
 
-    in_file.close()
+    process_bib_files(in_files, out_file,
+            args.titles, args.short, args.deduplicate, cited_anchors)
+
+    for f in in_files:
+        f.close()
+ 
     if out_file != sys.stdout:
         out_file.close()
