@@ -61,7 +61,7 @@ SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 re_pages_one = re.compile("^\d+$")
 re_pages_two = re.compile("^(\d+)\s*-+\s*(\d+)$")
 
-re_aux_citation = re.compile("\\citation\{([^\}]+)\}")
+re_aux_citation = re.compile("\\bibcite\{([^\}]+)\}")
 
 def process_entry(oneline_entry, if_shorten_entry):
     """
