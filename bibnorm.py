@@ -50,7 +50,9 @@ ATTRIBUTES = ("author", "title", "journal", "booktitle", "institution",
 "school", "key", "year", "month", "series", "volume", "number", "pages",
 "publisher", "edition", "note", "howpublished", "url")
 
-ATTR_ONLY_IN = {"url":("note"), "publisher": ("book", "inbook", "incollection")}
+ATTR_ONLY_IN = {
+        "url":("note"),
+        "publisher": ("article", "book", "inbook", "incollection")}
 
 ATTRIBUTES_DROP = ("location", "address", "organization", "ee",
 "doi", "crossref", "bibsource", "isbn", "issn", "acmid", "numpages",
