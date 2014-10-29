@@ -278,8 +278,9 @@ def process_bib_files(in_descriptors, out_descriptor, \
 
     out_descriptor.write("\n\n".join(final_entries))
 
-    with open(NOTCITED_FILE, "w") as ncf:
-        ncf.write("\n\n".join(abandoned_entries))
+    if abandoned_entries:
+        with open(NOTCITED_FILE, "w") as ncf:
+            ncf.write("\n\n".join(abandoned_entries))
 
     if if_print_titles:
         print("\n#### Print All Titles ####")
