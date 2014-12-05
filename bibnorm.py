@@ -63,7 +63,7 @@ SYNTAX_CORRECTION_MONTH = {"Jnu": "Jun"}
 re_pages_one = re.compile("^\d+$")
 re_pages_two = re.compile("^(\d+)\s*-+\s*(\d+)$")
 
-re_aux_citation = re.compile("\\bibcite\{([^\}]+)\}")
+re_aux_citation = re.compile("\\\\bibcite\{([^\}]+)\}")
 
 def process_entry(oneline_entry, if_shorten_entry):
     """
@@ -103,9 +103,9 @@ def process_entry(oneline_entry, if_shorten_entry):
     category = oneline_entry[1:cap_left_bracket_index].lower().strip()
 
     if category not in CATEGORIES:
-        logger.info("drop comment:\n"
-                + "    {0}".format(oneline_entry))
-        return
+        summary = oneline_entry[:32].replace('\n', '')
+        logger.info("drop comment:{0}".format(summary))
+        raise DropComment()
 
     # Step 3: find content and extract anchor word
     content = oneline_entry[cap_left_bracket_index+1: -1]
@@ -249,8 +249,7 @@ def process_bib_files(in_descriptors, out_descriptor, \
     # record the index of entry start point, where the "@" is
     index_of_entry_start = 0
 
-    index = 0
-    for char in oneline_content:
+    for index, char in enumerate(oneline_content):
 
         if char == "@":
             if half_bracket != 0:
@@ -262,17 +261,19 @@ def process_bib_files(in_descriptors, out_descriptor, \
         elif char == "}":
             half_bracket -= 1
             if half_bracket == 0:
-                final_entry, anchor, title = process_entry(
-                        oneline_content[index_of_entry_start: index+1],
-                        if_shorten_entries)
+                try:
+                    final_entry, anchor, title = process_entry(
+                            oneline_content[index_of_entry_start: index+1],
+                            if_shorten_entries)
+                except DropComment:
+                    continue
+
                 if not cited or anchor in cited:
                     final_entries.append(final_entry)
                 else:
                     abandoned_entries.append(final_entry)
                 title2anchor[title] = anchor
             
-        index += 1
-
     if if_dedup:
         dedup(title2anchor)
 
@@ -314,6 +315,9 @@ class InvalidOutputFile(Exception):
     pass
 
 class ErrorMultipleFilesInplace(Exception):
+    pass
+
+class DropComment(Exception):
     pass
 
 if __name__ == "__main__":
