@@ -119,10 +119,22 @@ def process_entry(oneline_entry, if_shorten_entry):
         else:
             attr_merged_seg = attr_merged_seg + ", " + item
 
-        if attr_merged_seg.count("{") == attr_merged_seg.count("}") and \
-                attr_merged_seg.count('"') % 2 == 0:
-                    attrs.append(attr_merged_seg)
-                    attr_merged_seg = ""
+        # test if "{" and "}" match
+        if attr_merged_seg.count("{") == attr_merged_seg.count("}"):
+
+            # test if '"' and '"' match
+            quote_splited_pieces = attr_merged_seg.split('"')
+            quotecnt = 0
+            for piece in quote_splited_pieces[:-1]:
+                if piece[-1] != "\\":
+                    quotecnt += 1
+            if quotecnt % 2 == 0:
+
+                # obtain attr if "{}" and '"' match
+                attrs.append(attr_merged_seg)
+
+                # for warning on the next line
+                attr_merged_seg = ""
 
     if attr_merged_seg:
         logger.warning("unmatched bracket, potential program logic error")
@@ -303,6 +315,7 @@ def analyze_aux(auxfile):
             re_match = re_aux_citation.search(line.strip())
             if re_match:
                 anchors.append(re_match.groups()[0])
+    print(anchors[-1])
     return anchors
 
 class ErrorParsedEntry(Exception):
